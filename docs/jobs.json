@@ -1,8 +1,13 @@
 {
- "updated_at": "2026-11-18T21:34:26+00:00",
+ "updated_at": "2026-11-18T21:35:33+00:00",
  "pay_floor": 20,
  "companies_checked": 63,
- "errors": [],
+ "errors": [
+  {
+   "company": "Spotify",
+   "error": "HTTP 502"
+  }
+ ],
  "jobs": [
   {
    "id": "greenhouse:airbnb:8376045",
@@ -37,7 +42,7 @@
    "pay_currency": "USD",
    "pay_min_hourly": 12.02,
    "pay_max_hourly": 12.02,
-   "under_floor": true,
+   "under_floor": false,
    "first_seen": "2026-11-18T21:34:26+00:00"
   },
   {
