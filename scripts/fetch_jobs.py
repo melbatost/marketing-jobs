@@ -47,6 +47,12 @@ REMOTE_ONLY_TOKENS = {
     "remote", "anywhere", "united states", "usa", "us", "u.s.", "north america",
     "remote - us", "remote, us", "remote (us)", "remote (united states)",
 }
+NON_US_RE = re.compile(
+    r"\b(france|paris|united kingdom|uk|england|london|ireland|dublin|germany|berlin|spain|madrid|"
+    r"netherlands|amsterdam|canada|toronto|vancouver|mexico|brazil|singapore|japan|tokyo|india|"
+    r"australia|sydney|korea|seoul|china|hong kong|taiwan|uae|dubai|sweden|stockholm|poland|portugal)\b",
+    re.I,
+)
 GRAD_RE = re.compile(r"\b(mba|phd|ph\.d|master'?s|graduate student)\b", re.I)
 SYMBOLS = {"USD": "$", "EUR": "€", "GBP": "£", "CAD": "CA$", "AUD": "A$", "SGD": "S$", "JPY": "¥", "INR": "₹"}
 HOURLY_RE = re.compile(
@@ -180,7 +186,8 @@ def make_job(company, board, job_id, title, url, location, remote_only, posted, 
     }
     if pay:
         job["pay_min_hourly"], job["pay_max_hourly"], job["pay"], job["pay_currency"] = pay
-        job["under_floor"] = pay[3] == "USD" and pay[1] < PAY_FLOOR
+        # Some boards label non-US pay as USD, so only flag US roles.
+        job["under_floor"] = pay[3] == "USD" and pay[1] < PAY_FLOOR and not NON_US_RE.search(location or "")
     return job
 
 
