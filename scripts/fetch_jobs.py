@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Check company job boards for paid marketing internships and write docs/jobs.json.
+"""Check company job boards and two public internship lists for paid marketing
+internships in the US, and write docs/jobs.json.
 
 Uses only the Python standard library, so GitHub Actions can run it with no installs.
 Companies come from companies.json, plus a Notion database if NOTION_TOKEN and
-NOTION_COMPANIES_DB are set.
+NOTION_COMPANIES_DB are set. Extra roles come from SimplifyJobs/Summer2027-Internships
+and zapplyjobs/Internships-2027 (credited on the board).
 """
 
 import html
@@ -48,10 +50,35 @@ REMOTE_ONLY_TOKENS = {
     "remote - us", "remote, us", "remote (us)", "remote (united states)",
 }
 NON_US_RE = re.compile(
-    r"\b(france|paris|united kingdom|uk|england|london|ireland|dublin|germany|berlin|spain|madrid|"
-    r"netherlands|amsterdam|canada|toronto|vancouver|mexico|brazil|singapore|japan|tokyo|india|"
-    r"australia|sydney|korea|seoul|china|hong kong|taiwan|uae|dubai|sweden|stockholm|poland|portugal)\b",
+    r"\b(france|paris|united kingdom|uk|england|scotland|wales|london|manchester|ireland|dublin|"
+    r"germany|berlin|munich|hamburg|spain|madrid|barcelona|italy|milan|rome|netherlands|amsterdam|"
+    r"belgium|brussels|switzerland|zurich|geneva|austria|vienna|denmark|copenhagen|norway|oslo|"
+    r"sweden|stockholm|finland|helsinki|poland|warsaw|portugal|lisbon|czech|prague|romania|greece|"
+    r"canada|toronto|vancouver|montreal|ontario|quebec|british columbia|alberta|calgary|ottawa|"
+    r"mexico|brazil|sao paulo|argentina|buenos aires|chile|colombia|bogota|peru|latam|"
+    r"singapore|japan|tokyo|india|bangalore|bengaluru|hyderabad|mumbai|delhi|pune|chennai|"
+    r"australia|sydney|melbourne|new zealand|auckland|korea|seoul|china|beijing|shanghai|shenzhen|"
+    r"hong kong|taiwan|taipei|philippines|manila|vietnam|indonesia|jakarta|thailand|bangkok|malaysia|"
+    r"israel|tel aviv|uae|dubai|abu dhabi|saudi|riyadh|qatar|doha|egypt|cairo|nigeria|lagos|kenya|"
+    r"nairobi|south africa|emea|apac|europe)\b",
     re.I,
+)
+US_STATE_NAMES = (
+    "alabama|alaska|arizona|arkansas|california|colorado|connecticut|delaware|florida|georgia|hawaii|"
+    "idaho|illinois|indiana|iowa|kansas|kentucky|louisiana|maine|maryland|massachusetts|michigan|"
+    "minnesota|mississippi|missouri|montana|nebraska|nevada|new hampshire|new jersey|new mexico|"
+    "new york|north carolina|north dakota|ohio|oklahoma|oregon|pennsylvania|rhode island|"
+    "south carolina|south dakota|tennessee|texas|utah|vermont|virginia|washington|west virginia|"
+    "wisconsin|wyoming|district of columbia"
+)
+US_RE = re.compile(
+    r"\b(united states|usa|u\.s\.a?\.?|" + US_STATE_NAMES +
+    r"|nyc|san francisco|bay area|silicon valley|los angeles|seattle|boston|chicago|austin)\b",
+    re.I,
+)
+US_CODE_RE = re.compile(
+    r"(?:^|[\s,(])(US|AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|"
+    r"NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY|DC|SF)(?=$|[\s,)\-])"
 )
 GRAD_RE = re.compile(r"\b(mba|phd|ph\.d|master'?s|graduate student)\b", re.I)
 SYMBOLS = {"USD": "$", "EUR": "€", "GBP": "£", "CAD": "CA$", "AUD": "A$", "SGD": "S$", "JPY": "¥", "INR": "₹"}
@@ -105,6 +132,23 @@ def is_marketing(title, departments):
     if TECH_RE.search(title) and not re.search(r"marketing", title, re.I):
         return False
     return title_says_marketing or dept_says_marketing
+
+
+def is_us(location):
+    """True unless every location listed for the role is outside the US.
+
+    A role with no location, or only "Remote", is kept.
+    """
+    parts = [p.strip() for p in re.split(r"[•;|]| / | or ", location or "") if p.strip()]
+    if not parts:
+        return True
+    saw_non_us = False
+    for part in parts:
+        if NON_US_RE.search(part):
+            saw_non_us = True
+        elif US_RE.search(part) or US_CODE_RE.search(part):
+            return True
+    return not saw_non_us
 
 
 def remote_only_from_location(location):
@@ -283,6 +327,112 @@ def from_ashby(company):
 BOARDS = {"greenhouse": from_greenhouse, "lever": from_lever, "ashby": from_ashby}
 
 
+# ---------- public internship lists ----------
+
+SIMPLIFY_URL = "https://raw.githubusercontent.com/SimplifyJobs/Summer2027-Internships/dev/.github/scripts/listings.json"
+ZAPPLY_URL = "https://raw.githubusercontent.com/zapplyjobs/Internships-2027/main/README.md"
+ZAPPLY_SECTIONS = {"Product, Design & Research", "Business & Operations", "Other Internships"}
+ZAPPLY_ROW = re.compile(
+    r"^\|\s*\*\*(?P<company>.+?)\*\*\s*\|\s*(?P<title>.+?)\s*\|\s*(?P<location>.*?)\s*\|\s*(?P<age>\S*)\s*\|"
+    r".*?\[<img[^\]]*\]\((?P<url>https?://[^)\s]+)\)\s*\|\s*$"
+)
+# Lists cover every field, so they need a clearer marketing signal than a company's own board.
+LIST_MARKETING_RE = re.compile(
+    r"\b(marketing|marketer|brand|branding|social media|communications|public relations|pr|publicity|"
+    r"influencer|creators?|copywrit\w*|consumer insights?|go-to-market|gtm|creative(?! technolog)|"
+    r"content (?:creat\w*|market\w*|strateg\w*|design)|partnerships?|campaigns?)\b",
+    re.I,
+)
+LIST_EXCLUDE_RE = re.compile(
+    r"\b(product manag\w*|engineer\w*|risk|banking|documentation|economic development|industrial design|"
+    r"technology intern|data scien\w*|software|hardware)\b",
+    re.I,
+)
+
+
+def list_is_marketing(title):
+    if not INTERN_RE.search(title) or not LIST_MARKETING_RE.search(title):
+        return False
+    return not LIST_EXCLUDE_RE.search(title) or bool(re.search(r"marketing", title, re.I))
+
+
+AGE_UNITS = {"m": 60, "h": 3600, "d": 86400, "w": 604800, "mo": 2592000}
+
+
+def fetch_text(url):
+    req = Request(url, headers={"User-Agent": USER_AGENT})
+    with urlopen(req, timeout=60) as resp:
+        return resp.read().decode("utf-8")
+
+
+def slugify(name):
+    return re.sub(r"[^a-z0-9]+", "-", (name or "").lower()).strip("-") or "unknown"
+
+
+def list_company(name, title):
+    return {"name": name.strip(), "slug": slugify(name), "tags": ["b2b"] if re.search(r"\bB2B\b", title) else []}
+
+
+def from_simplify(data=None):
+    data = data if data is not None else fetch_json(SIMPLIFY_URL)
+    jobs = []
+    for x in data:
+        if not x.get("active") or x.get("is_visible") is False:
+            continue
+        terms = x.get("terms") or []
+        if not any(re.search(r"20(2[7-9]|3\d)", t) for t in terms):
+            continue
+        title = (x.get("title") or "").strip()
+        if not list_is_marketing(title):
+            continue
+        location = " • ".join(x.get("locations") or [])
+        posted = to_iso(x["date_posted"] * 1000) if x.get("date_posted") else None
+        season = next((t for t in terms if "2027" in t), None) or season_of(title)
+        job = make_job(list_company(x.get("company_name") or "", title), "simplify", x.get("id"), title,
+                       x.get("url"), location, remote_only_from_location(location), posted, None, season)
+        job["source"] = "Simplify"
+        jobs.append(job)
+    return jobs
+
+
+def from_zapply(text=None):
+    text = text if text is not None else fetch_text(ZAPPLY_URL)
+    jobs, section, now = [], None, datetime.now(timezone.utc).timestamp()
+    for line in text.splitlines():
+        if "<summary>" in line:
+            m = re.search(r"<strong>(.+?)</strong>", line)
+            section = html.unescape(m.group(1)) if m else None
+            continue
+        if section not in ZAPPLY_SECTIONS:
+            continue
+        r = ZAPPLY_ROW.match(line)
+        if not r:
+            continue
+        title = html.unescape(r["title"]).strip()
+        if not list_is_marketing(title):
+            continue
+        posted = None
+        a = re.fullmatch(r"(\d+)(mo|m|h|d|w)", r["age"])
+        if a:
+            posted = datetime.fromtimestamp(now - int(a[1]) * AGE_UNITS[a[2]], tz=timezone.utc).replace(microsecond=0).isoformat()
+        location = html.unescape(r["location"]).strip()
+        job_id = r["url"].split("/l/d/")[-1].split("?")[0]
+        job = make_job(list_company(html.unescape(r["company"]), title), "zapply", job_id, title, r["url"],
+                       location, remote_only_from_location(location), posted, None, season_of(title))
+        job["source"] = "Zapply"
+        jobs.append(job)
+    return jobs
+
+
+LISTS = {"Simplify internship list": from_simplify, "Zapply internship list": from_zapply}
+
+
+def dedupe_key(job):
+    company = re.sub(r"[^a-z0-9]", "", job["company"].lower())[:8]
+    title = re.sub(r"\(?\b(summer|fall|spring|winter)\s*20\d\d\b\)?|[^a-z0-9]", "", job["title"].lower())
+    return company + "|" + title
+
+
 # ---------- company list ----------
 
 def notion_companies():
@@ -361,9 +511,22 @@ def main():
             jobs.extend(found)
             if err:
                 errors.append(err)
+    # Company boards go first so their copy (with pay) wins over the same role from a list.
+    for name, fetch in LISTS.items():
+        try:
+            jobs.extend(fetch())
+        except (HTTPError, URLError, TimeoutError, ValueError) as e:
+            errors.append({"company": name, "error": str(e)[:200]})
 
-    unique = {}
+    unique, seen_roles, dropped_non_us = {}, set(), 0
     for j in jobs:
+        if not is_us(j["location"]):
+            dropped_non_us += 1
+            continue
+        key = dedupe_key(j)
+        if key in seen_roles:
+            continue
+        seen_roles.add(key)
         j["first_seen"] = previous.get(j["id"]) or stamp
         unique[j["id"]] = j
     jobs = sorted(unique.values(), key=lambda j: (j["first_seen"], j["posted_at"] or ""), reverse=True)
@@ -376,7 +539,8 @@ def main():
         "errors": errors,
         "jobs": jobs,
     }, indent=1, ensure_ascii=False) + "\n")
-    print(f"{len(jobs)} roles from {len(companies)} companies, {len(errors)} errors")
+    print(f"{len(jobs)} US roles from {len(companies)} companies and {len(LISTS)} lists "
+          f"({dropped_non_us} non-US dropped), {len(errors)} errors")
     for e in errors:
         print(f"  ! {e['company']}: {e['error']}", file=sys.stderr)
 

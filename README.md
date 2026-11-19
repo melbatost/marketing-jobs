@@ -7,6 +7,8 @@ A job board for paid marketing internships. It checks company job boards every f
 ## How it works
 
 - `companies.json` lists the companies to check and which job board each one uses (Greenhouse, Lever or Ashby).
+- It also reads two public internship lists, [SimplifyJobs/Summer2027-Internships](https://github.com/SimplifyJobs/Summer2027-Internships) and [zapplyjobs/Internships-2027](https://github.com/zapplyjobs/Internships-2027), and keeps the marketing roles.
+- Only US roles are kept. A role stays if any of its locations is in the US.
 - `scripts/fetch_jobs.py` reads each board's public job feed, keeps internships in marketing-type roles, and writes `docs/jobs.json`.
 - A GitHub Action runs the script every four hours and saves the results.
 - GitHub Pages serves `docs/index.html`, which shows the roles with filters.

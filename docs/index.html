@@ -153,10 +153,12 @@ fetch("jobs.json", { cache: "no-store" })
   .then((d) => {
     data = d;
     document.getElementById("sub").textContent =
-      `Paid marketing internships pulled from ${d.companies_checked} company job boards. Updated ${ago(d.updated_at)}.`;
+      `Paid US marketing internships from ${d.companies_checked} company job boards and two public internship lists. Updated ${ago(d.updated_at)}.`;
     const errs = (d.errors || []).length;
     document.getElementById("foot").innerHTML =
-      `Checks every few hours. Listings link straight to each company's application page.` +
+      `Checks every few hours. US roles only. Also pulls from ` +
+      `<a href="https://github.com/SimplifyJobs/Summer2027-Internships">Simplify</a> and ` +
+      `<a href="https://github.com/zapplyjobs/Internships-2027">Zapply</a>.` +
       (errs ? ` ${errs} job board${errs > 1 ? "s" : ""} didn't respond on the last check.` : "");
     render();
   })
